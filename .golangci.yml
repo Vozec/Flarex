@@ -1,0 +1,72 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+  go: "1.25"
+
+linters:
+  default: none
+  enable:
+    # errcheck deliberately omitted: we use defer Close() idiomatically
+    # everywhere and the lint produces ~50 false-positives across types
+    # it can't track precisely. govet + staticcheck still catch unused
+    # error returns from non-Close calls. If you want strict error
+    # handling here, re-add errcheck and audit each occurrence by hand.
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - bodyclose
+    - noctx
+    - gosec
+    - prealloc
+    - unconvert
+    - misspell
+    - revive
+    - asciicheck
+    - unparam
+    - gocritic
+  settings:
+    gosec:
+      excludes:
+        - G104  # hash.Write / errors we deliberately ignore (hash.Hash never errors)
+        - G301  # state dir 0o755 is intentional for shared multi-user setups
+        - G304  # config / template paths come from validated CLI flags
+        - G402  # TLS skip-verify warns on conditional configs we own
+        - G404  # math/rand for jitter / non-crypto IDs
+        - G115  # int conversions (netip.Port, etc.)
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true
+    gocritic:
+      disabled-checks:
+        - ifElseChain
+        - singleCaseSwitch
+  exclusions:
+    rules:
+      # Tests don't need context for net.Dial / http.Get; they're synchronous
+      # bench/integration helpers, and the existing timeouts are explicit.
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
+          - unparam
+          - noctx
+          - bodyclose
+      # WS dial: the response body is owned by the websocket library after
+      # upgrade — closing it ourselves breaks the tunnel.
+      - path: internal/proxy/tunnel.go
+        linters:
+          - bodyclose
+      - path: cmd/flarex/main.go
+        linters:
+          - bodyclose
+      # Generated / vendor-style files emit deprecated-API warnings we
+      # don't control.
+      - linters:
+          - staticcheck
+        text: "SA1019"

@@ -1,0 +1,71 @@
+# Build artifacts
+/bin/
+/dist/
+*.test
+*.out
+*.exe
+*.so
+*.dylib
+
+# Frontend build + deps
+/web/node_modules/
+/web/dist/
+/internal/admin/webui/dist/*
+!/internal/admin/webui/dist/.gitkeep
+
+# Coverage / profiling
+coverage.out
+coverage.html
+*.prof
+*.pprof
+cpu.out
+mem.out
+
+# Local secrets / state — NEVER COMMIT
+config.yaml
+*.db
+*.sqlite
+*.sqlite3
+.env
+.env.*
+!.env.example
+secrets/
+credentials/
+
+# Client local state
+client.yaml
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Go
+vendor/
+go.work
+go.work.sum
+
+# Tooling caches
+.cache/
+.golangci-cache/
+
+# Docker dev artifacts
+docker-compose.override.yml
+
+# Local helper scripts not meant for the repo
+*.local.*
+TODO.local
+NOTES.local
+
+# AI assistant context — local-only, not for the repo
+CLAUDE.md
+.claude/
+.cursor/
+.aider*
+
+# anonymize.sh personal patterns (real token / account id / subdomain / email)
+scripts/anonymize.local.sh

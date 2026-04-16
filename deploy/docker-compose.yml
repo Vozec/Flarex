@@ -1,0 +1,71 @@
+services:
+  flarex:
+    image: ghcr.io/vozec/flarex:latest
+    container_name: flarex
+    restart: unless-stopped
+
+    environment:
+      FLX_HMAC_SECRET: "${FLX_HMAC_SECRET:?FLX_HMAC_SECRET required (32+ random chars)}"
+      FLX_TOKENS: "${FLX_TOKENS:-}"
+      FLX_LISTEN_SOCKS5: "${FLX_LISTEN_SOCKS5:-tcp://0.0.0.0:1080}"
+      FLX_LISTEN_AUTH_USER: "${FLX_LISTEN_AUTH_USER:-}"
+      FLX_LISTEN_AUTH_PASS: "${FLX_LISTEN_AUTH_PASS:-}"
+      FLX_ADMIN_ADDR: "${FLX_ADMIN_ADDR:-0.0.0.0:9090}"
+      FLX_ADMIN_API_KEY: "${FLX_ADMIN_API_KEY:-}"
+      FLX_ADMIN_TOKEN: "${FLX_ADMIN_TOKEN:-}"
+      FLX_ADMIN_BASIC_USER: "${FLX_ADMIN_BASIC_USER:-}"
+      FLX_ADMIN_BASIC_PASS: "${FLX_ADMIN_BASIC_PASS:-}"
+      FLX_DISCORD_WEBHOOK_URL: "${FLX_DISCORD_WEBHOOK_URL:-}"
+      FLX_WORKER_COUNT: "${FLX_WORKER_COUNT:-10}"
+      FLX_WORKER_PREFIX: "${FLX_WORKER_PREFIX:-flarex-}"
+      FLX_WORKER_BACKEND: "${FLX_WORKER_BACKEND:-workers_dev}"
+      FLX_LOG_LEVEL: "${FLX_LOG_LEVEL:-info}"
+      FLX_STATE_PATH: "${FLX_STATE_PATH:-/state/flarex.db}"
+
+      # Timeouts — every value is overridable. Format: Go duration ("500ms", "15s", "2m").
+      # PREWARM_RETRIES is an integer. Unset vars fall back to config file, then defaults.
+      FLX_TIMEOUT_DIAL: "${FLX_TIMEOUT_DIAL:-}"
+      FLX_TIMEOUT_PROBE: "${FLX_TIMEOUT_PROBE:-}"
+      FLX_TIMEOUT_PROBE_FETCH: "${FLX_TIMEOUT_PROBE_FETCH:-}"
+      FLX_TIMEOUT_TLS_HANDSHAKE: "${FLX_TIMEOUT_TLS_HANDSHAKE:-}"
+      FLX_TIMEOUT_IDLE_CONN: "${FLX_TIMEOUT_IDLE_CONN:-}"
+      FLX_TIMEOUT_H2_READ_IDLE: "${FLX_TIMEOUT_H2_READ_IDLE:-}"
+      FLX_TIMEOUT_H2_PING: "${FLX_TIMEOUT_H2_PING:-}"
+      FLX_TIMEOUT_HEALTH_CHECK_INTERVAL: "${FLX_TIMEOUT_HEALTH_CHECK_INTERVAL:-}"
+      FLX_TIMEOUT_HEALTH_CHECK_TIMEOUT: "${FLX_TIMEOUT_HEALTH_CHECK_TIMEOUT:-}"
+      FLX_TIMEOUT_DNS_CACHE_TTL: "${FLX_TIMEOUT_DNS_CACHE_TTL:-}"
+      FLX_TIMEOUT_CF_BLOCKED_CACHE_TTL: "${FLX_TIMEOUT_CF_BLOCKED_CACHE_TTL:-}"
+      FLX_TIMEOUT_PREWARM_ATTEMPT: "${FLX_TIMEOUT_PREWARM_ATTEMPT:-}"
+      FLX_TIMEOUT_PREWARM_RETRIES: "${FLX_TIMEOUT_PREWARM_RETRIES:-}"
+      FLX_TIMEOUT_BREAKER_INTERVAL: "${FLX_TIMEOUT_BREAKER_INTERVAL:-}"
+      FLX_TIMEOUT_BREAKER_OPEN: "${FLX_TIMEOUT_BREAKER_OPEN:-}"
+      FLX_TIMEOUT_CF_API: "${FLX_TIMEOUT_CF_API:-}"
+      FLX_TIMEOUT_DESTROY_ON_EXIT: "${FLX_TIMEOUT_DESTROY_ON_EXIT:-}"
+      FLX_TIMEOUT_ADMIN_SHUTDOWN: "${FLX_TIMEOUT_ADMIN_SHUTDOWN:-}"
+      FLX_TIMEOUT_ADMIN_TOKEN_OP: "${FLX_TIMEOUT_ADMIN_TOKEN_OP:-}"
+
+    ports:
+      - "1080:1080"
+      - "9090:9090"
+
+    volumes:
+      - ./config.yaml:/etc/flarex/config.yaml:ro
+      - flarex-state:/state
+
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9090/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 64M
+
+volumes:
+  flarex-state:
+    driver: local

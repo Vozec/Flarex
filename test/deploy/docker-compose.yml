@@ -1,0 +1,102 @@
+# docker-compose for local dev/test.
+# - mockworker simulates a Cloudflare Worker
+# - target = nginx local
+# - flarex points at mockworker (simulated workers.dev URL)
+#
+# Usage: docker-compose up --build
+# Then: curl --socks5-hostname localhost:1080 http://target/
+services:
+
+  target:
+    image: nginx:alpine
+    container_name: cft-target
+    networks:
+      backend:
+        aliases:
+          - target
+
+  mockworker:
+    build:
+      context: ..
+      target: mock
+    container_name: cft-mockworker
+    environment:
+      MOCK_HMAC_SECRET: testsecret
+    command: ["--addr", ":8787", "--secret", "testsecret"]
+    networks:
+      backend:
+        aliases:
+          - mockworker.workers.dev
+          - cft-aaaaaa.testuser.workers.dev  # alias simulating CF URL
+
+  seed:
+    build:
+      context: ..
+      target: prod
+    container_name: cft-seed
+    user: "65532:65532"
+    depends_on:
+      - mockworker
+    entrypoint: ["/flarex"]
+    command:
+      - "-c"
+      - "/etc/flarex/config.yaml"
+      - "seed"
+      - "--name"
+      - "mock"
+      - "--url"
+      - "http://mockworker:8787"
+    volumes:
+      - ./compose-config.yaml:/etc/flarex/config.yaml:ro
+      - flarex-state:/state
+    networks:
+      - backend
+
+  flarex:
+    build:
+      context: ..
+      target: prod
+    container_name: cft-proxy
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    ports:
+      - "1080:1080"
+      - "9090:9090"
+    environment:
+      FLX_HMAC_SECRET: testsecret
+    volumes:
+      - ./compose-config.yaml:/etc/flarex/config.yaml:ro
+      - flarex-state:/state
+    user: "65532:65532"
+    networks:
+      - backend
+
+  bench:
+    image: alpine:3
+    container_name: cft-bench
+    depends_on:
+      - flarex
+      - target
+    networks:
+      - backend
+    command:
+      - sh
+      - -c
+      - |
+        apk add --no-cache curl bash
+        sleep 3
+        echo "=== SOCKS5 test via flarex ==="
+        for i in 1 2 3 4 5; do
+          curl -s -o /dev/null -w "%{http_code} %{time_total}s\n" --socks5-hostname flarex:1080 http://target/
+        done
+        echo "=== Admin /status ==="
+        curl -s http://flarex:9090/status | head -c 500
+        echo
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  flarex-state:

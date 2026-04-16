@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* shadcn-style CSS variables — light / dark. FlareX tweaks: accent always
+ * Cloudflare orange; dark mode near-black rather than pure neutral. */
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 24 93% 54%;            /* orange for focus rings */
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 220 16% 6%;      /* #0c0e12 */
+    --foreground: 210 20% 91%;
+    --card: 220 14% 11%;           /* #161a21 */
+    --card-foreground: 210 20% 91%;
+    --muted: 220 12% 15%;           /* #1d222b */
+    --muted-foreground: 220 9% 58%;
+    --border: 220 10% 21%;          /* #2a2f38 */
+    --input: 220 10% 21%;
+    --ring: 24 93% 54%;
+    --destructive: 0 63% 55%;
+    --destructive-foreground: 0 0% 98%;
+  }
+
+  * { border-color: hsl(var(--border)); }
+  html, body, #root { height: 100%; }
+  body { font-family: 'Inter', system-ui, sans-serif; font-feature-settings: "rlig" 1, "calt" 1; }
+  code, pre { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+}
+
+/* Custom orange button + pill helpers used across pages. Kept thin so
+ * shadcn's <Button> variants do most of the work. */
+@layer components {
+  .btn-accent {
+    @apply inline-flex items-center justify-center gap-2 rounded-md bg-accent px-4 py-2
+           text-sm font-medium text-white transition hover:bg-accent-light
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring
+           disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-md border border-border
+           bg-transparent px-3 py-1.5 text-sm text-foreground transition
+           hover:bg-muted focus-visible:outline-none focus-visible:ring-2
+           focus-visible:ring-ring disabled:opacity-50;
+  }
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-md border border-destructive/50
+           bg-transparent px-3 py-1.5 text-sm text-destructive transition
+           hover:bg-destructive hover:text-destructive-foreground;
+  }
+  .card {
+    @apply rounded-lg border bg-card text-card-foreground shadow-sm;
+  }
+  .pill {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+  .pill-ok      { @apply bg-emerald-500/10 text-emerald-700 dark:text-emerald-300; }
+  .pill-warn    { @apply bg-amber-500/10 text-amber-700 dark:text-amber-300; }
+  .pill-err     { @apply bg-red-500/10 text-red-700 dark:text-red-300; }
+  .pill-neutral { @apply bg-muted text-muted-foreground; }
+
+  .input {
+    @apply flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm
+           shadow-sm placeholder:text-muted-foreground focus-visible:outline-none
+           focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed
+           disabled:opacity-50;
+  }
+}

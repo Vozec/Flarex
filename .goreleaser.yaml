@@ -1,0 +1,73 @@
+version: 2
+
+project_name: flarex
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: flarex
+    main: ./cmd/flarex
+    binary: flarex
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
+      - -X main.buildDate={{.Date}}
+
+archives:
+  - id: flarex
+    ids: [flarex]
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - config.example.yaml
+      - LICENSE*
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+# Docker push to GHCR — disabled by default. To enable:
+#   1. uncomment block below
+#   2. give the release workflow `packages: write` permission
+#   3. ensure goreleaser-action runs `docker login ghcr.io -u $GITHUB_ACTOR -p $GITHUB_TOKEN` before `release`
+#
+# dockers:
+#   - image_templates:
+#       - "ghcr.io/vozec/flarex:{{ .Version }}-amd64"
+#       - "ghcr.io/vozec/flarex:latest-amd64"
+#     dockerfile: Dockerfile
+#     use: buildx
+#     goos: linux
+#     goarch: amd64
+#     build_flag_templates:
+#       - --target=prod
+#       - --platform=linux/amd64
+
+release:
+  github:
+    owner: Vozec
+    name: Flarex
+  draft: true

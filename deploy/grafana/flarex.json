@@ -1,0 +1,130 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "Connections active",
+      "type": "timeseries",
+      "gridPos": {"h": 6, "w": 6, "x": 0, "y": 0},
+      "targets": [{"expr": "cft_connections_active", "legendFormat": "active"}],
+      "fieldConfig": {"defaults": {"unit": "short", "color": {"mode": "palette-classic"}}},
+      "datasource": {"type": "prometheus", "uid": "prometheus"}
+    },
+    {
+      "title": "Connections / s",
+      "type": "timeseries",
+      "gridPos": {"h": 6, "w": 6, "x": 6, "y": 0},
+      "targets": [{"expr": "rate(cft_connections_total[1m])", "legendFormat": "cps"}],
+      "fieldConfig": {"defaults": {"unit": "cps", "color": {"mode": "palette-classic"}}},
+      "datasource": {"type": "prometheus", "uid": "prometheus"}
+    },
+    {
+      "title": "Dial success / fail rate",
+      "type": "timeseries",
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 0},
+      "targets": [
+        {"expr": "rate(cft_dial_success_total[1m])", "legendFormat": "success"},
+        {"expr": "rate(cft_dial_fail_total[1m])", "legendFormat": "fail"},
+        {"expr": "rate(cft_handshake_fail_total[1m])", "legendFormat": "handshake_fail"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "ops"}},
+      "datasource": {"type": "prometheus", "uid": "prometheus"}
+    },
+    {
+      "title": "Dial latency p50 / p95 / p99",
+      "type": "timeseries",
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 6},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, sum(rate(cft_dial_latency_seconds_bucket[5m])) by (vmrange))", "legendFormat": "p50"},
+        {"expr": "histogram_quantile(0.95, sum(rate(cft_dial_latency_seconds_bucket[5m])) by (vmrange))", "legendFormat": "p95"},
+        {"expr": "histogram_quantile(0.99, sum(rate(cft_dial_latency_seconds_bucket[5m])) by (vmrange))", "legendFormat": "p99"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "s"}},
+      "datasource": {"type": "prometheus", "uid": "prometheus"}
+    },
+    {
+      "title": "Throughput (↑ / ↓ bytes/s)",
+      "type": "timeseries",
+      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 6},
+      "targets": [
+        {"expr": "rate(cft_bytes_upstream_total[1m])", "legendFormat": "upstream"},
+        {"expr": "rate(cft_bytes_downstream_total[1m])", "legendFormat": "downstream"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "Bps"}},
+      "datasource": {"type": "prometheus", "uid": "prometheus"}
+    },
+    {
+      "title": "Hybrid fetch fallbacks",
+      "type": "timeseries",
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 13},
+      "targets": [{"expr": "rate(cft_fetch_fallback_total[5m])", "legendFormat": "promotions/s"}],
+      "fieldConfig": {"defaults": {"unit": "ops"}},
+      "datasource": {"type": "prometheus", "uid": "prometheus"}
+    },
+    {
+      "title": "Hedged dials (fired / wins)",
+      "type": "timeseries",
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 13},
+      "targets": [
+        {"expr": "rate(cft_dial_hedge_fired_total[5m])", "legendFormat": "fired"},
+        {"expr": "rate(cft_dial_hedge_wins_total[5m])", "legendFormat": "wins"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "ops"}},
+      "datasource": {"type": "prometheus", "uid": "prometheus"}
+    },
+    {
+      "title": "Filter denials / s",
+      "type": "timeseries",
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 13},
+      "targets": [{"expr": "rate(cft_filter_denied_total[1m])", "legendFormat": "denials"}],
+      "fieldConfig": {"defaults": {"unit": "ops"}},
+      "datasource": {"type": "prometheus", "uid": "prometheus"}
+    },
+    {
+      "title": "Requests per Worker (top 10)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 19},
+      "targets": [{"expr": "topk(10, rate(cft_worker_requests_total[5m]))", "legendFormat": "{{name}}"}],
+      "fieldConfig": {"defaults": {"unit": "ops"}},
+      "datasource": {"type": "prometheus", "uid": "prometheus"}
+    },
+    {
+      "title": "Go goroutines",
+      "type": "timeseries",
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 27},
+      "targets": [{"expr": "go_goroutines", "legendFormat": "goroutines"}],
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "datasource": {"type": "prometheus", "uid": "prometheus"}
+    },
+    {
+      "title": "Go heap MB",
+      "type": "timeseries",
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 27},
+      "targets": [{"expr": "go_memstats_heap_alloc_bytes / 1024 / 1024", "legendFormat": "heap MB"}],
+      "fieldConfig": {"defaults": {"unit": "decmbytes"}},
+      "datasource": {"type": "prometheus", "uid": "prometheus"}
+    },
+    {
+      "title": "Process CPU seconds",
+      "type": "timeseries",
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 27},
+      "targets": [{"expr": "rate(process_cpu_seconds_total[1m])", "legendFormat": "cpu"}],
+      "fieldConfig": {"defaults": {"unit": "percentunit"}},
+      "datasource": {"type": "prometheus", "uid": "prometheus"}
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["flarex", "cloudflare", "proxy"],
+  "templating": {"list": []},
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "",
+  "title": "FlareX",
+  "uid": "flarex-main",
+  "version": 1
+}

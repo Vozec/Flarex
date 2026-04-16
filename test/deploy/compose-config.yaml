@@ -1,0 +1,42 @@
+# docker-compose config: points to mockworker (not real CF).
+# The Worker name must match the compose DNS alias (cft-aaaaaa.testuser.workers.dev).
+# ListWorkers via CF fails here → we bypass with a pre-seeded local state.
+
+log:
+  level: debug
+  json: false
+
+listen:
+  socks5: "tcp://0.0.0.0:1080"
+
+accounts:
+  - id: "dummy-account"
+    token: "dummy-token"
+    subdomain: "testuser"
+
+worker:
+  name_prefix: "cft-"
+  count: 0
+
+filter:
+  deny_cidrs: []
+  # nginx target ports within compose network
+  allow_ports: [80, 443, 8080, 8443]
+
+pool:
+  strategy: round_robin
+  max_retries: 2
+  backoff_ms: 50
+
+rate_limit:
+  per_host_qps: 0
+
+admin:
+  addr: "0.0.0.0:9090"
+  enable_pprof: true
+
+state:
+  path: "/state/flarex.db"
+
+security:
+  hmac_secret: "testsecret"

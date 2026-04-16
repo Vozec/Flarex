@@ -1,0 +1,35 @@
+[Unit]
+Description=FlareX — SOCKS5 proxy rotating via Cloudflare Workers
+Documentation=https://github.com/vozec/FlareX
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=flarex
+Group=flarex
+WorkingDirectory=/var/lib/flarex
+ExecStart=/usr/local/bin/flarex -c /etc/flarex/config.yaml serve
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=65536
+
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+ReadWritePaths=/var/lib/flarex
+
+# Env file optionnel pour secrets
+EnvironmentFile=-/etc/flarex/env
+
+[Install]
+WantedBy=multi-user.target

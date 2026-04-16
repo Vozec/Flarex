@@ -1,0 +1,120 @@
+# FlareX config
+
+log:
+  level: info       # trace|debug|info|warn|error
+  json: false
+
+listen:
+  # "tcp://host:port" or "unix:///path/to/socket"
+  socks5: "tcp://127.0.0.1:1080"
+  # Optional HTTP CONNECT proxy frontend. Shares dial path + auth with SOCKS5.
+  # Empty = disabled. curl works as `curl -x http://127.0.0.1:8118 https://...`
+  http: ""
+  auth_user: ""     # SOCKS5 + HTTP auth user (empty = no-auth)
+  auth_pass: ""
+  unix_perms: 0600
+
+# Session stickiness: authenticate as "<auth_user>-session-<id>" (or
+# "<auth_user>:session:<id>") → same session_id routes to same Worker while it
+# is healthy. Useful for cookie-based / multi-step flows.
+
+# Two ways to declare accounts:
+#   (a) Bare tokens — id + subdomain auto-discovered via CF API at startup
+#       (requires token with Workers:Edit scope at account level)
+#   (b) Explicit accounts — you set id/subdomain yourself
+# You can mix both. Resolved accounts are merged (dedup by id+token).
+
+tokens:
+  - "cf_api_token_with_workers_edit_scope"
+  # - "second_token_other_account"
+
+# OR / AND:
+accounts:
+  # - id: "your_cf_account_id"          # optional: "Account ID" on CF dashboard sidebar
+  #   token: "cf_api_token..."
+  #   subdomain: "your-subdomain"       # your URL is {script}.{subdomain}.workers.dev
+
+worker:
+  name_prefix: "cft-"
+  count: 5                    # N Workers per account
+  deploy_timeout: 30
+  template_path: ""           # override JS template (empty = embedded)
+
+  # auto-rotation: recycle Workers (redeploy) when age or req count exceeded
+  rotate_interval_sec: 300    # check every 5min
+  rotate_max_age_sec: 0       # 0 = off ; e.g. 3600 = recycle after 1h
+  rotate_max_req: 0           # 0 = off ; e.g. 10000 = recycle after 10k req
+
+filter:
+  # SSRF defense: RFC1918, loopback, link-local, CGNAT, cloud metadata,
+  # multicast/reserved, IPv6 ULA are ALWAYS blocked (hard-coded). Anything
+  # listed below is added on top — never replaces defaults. Empty = defaults only.
+  deny_cidrs: []
+  # ports whitelist. Use ["*"] (or empty list) to allow every port.
+  # Default = HTTP/HTTPS only. If you need SSH/DB tunneling via the proxy, widen:
+  #   allow_ports: [22, 80, 443, 3306, 5432, 6379, 8080, 8443]
+  allow_ports: [80, 443, 8080, 8443]
+
+pool:
+  strategy: "round_robin"     # round_robin | least_inflight
+  max_retries: 3              # cross-worker attempts
+  backoff_ms: 50              # base backoff ms between retries
+  hedge_after_ms: 0           # 0 = off ; 100 = fire 2nd worker if primary dial > 100ms
+  goroutine_size: 0           # 0 = unbounded goroutines ; N = ants pool size
+  proxy_mode: "hybrid"        # socket | fetch | hybrid
+  disable_probe: false        # true = skip probe byte, max throughput
+  # true = proxy terminates TLS to target with uTLS (random JA3 per conn).
+  # Client then speaks PLAINTEXT over the tunnel. Incompatible with default
+  # HTTPS client flows — most useful when you own both sides (custom scanner).
+  tls_rewrap: false
+
+rate_limit:
+  per_host_qps: 0             # 0 = off ; otherwise QPS cap per target host
+  per_host_burst: 10
+
+admin:
+  addr: "127.0.0.1:9090"      # empty = admin HTTP disabled
+  enable_pprof: false         # enables /debug/pprof/*
+  # Auth — set ANY of these (or several). Empty all = no auth (localhost only!)
+  token: ""                   # Bearer: "Authorization: Bearer <token>"
+  api_key: ""                 # X-API-Key header
+  basic_user: ""              # HTTP Basic
+  basic_pass: ""
+
+state:
+  path: "./flarex.db"    # bbolt file
+
+# OpenTelemetry traces (OTLP/gRPC). Empty endpoint = disabled (zero overhead).
+tracing:
+  endpoint: ""                # e.g. "localhost:4317" for Tempo/Jaeger/otel-collector
+  insecure: true              # plaintext gRPC (dev). false = TLS.
+
+security:
+  # Shared with Workers (injected at upload). Change = redeploy.
+  # Alt: env FLX_HMAC_SECRET
+  hmac_secret: "change_me_32b_minimum_random_string"
+
+# All values accept Go duration syntax: "500ms", "15s", "2m", "1h".
+# Empty/missing = default shown below. Env var FLX_TIMEOUT_<NAME> overrides each.
+timeouts:
+  dial: "15s"                    # Worker WS dial timeout
+  probe: "800ms"                 # socket-mode probe deadline
+  probe_fetch: "1500ms"          # fetch-mode probe deadline (higher: CF edge fetch)
+  tls_handshake: "10s"           # HTTP/2 transport TLS handshake
+  idle_conn: "120s"              # keep-alive idle timeout on worker HTTP pool
+  h2_read_idle: "30s"            # HTTP/2 ping when idle
+  h2_ping: "10s"                 # HTTP/2 ping deadline
+  health_check_interval: "30s"   # background /__health poll interval
+  health_check_timeout: "5s"     # per-worker health probe deadline
+  dns_cache_ttl: "5m"            # in-process DNS cache TTL
+  cf_blocked_cache_ttl: "10m"    # remember host is CF-hosted → skip socket mode
+  prewarm_attempt: "3s"          # prewarm HTTP probe per attempt
+  prewarm_retries: 5             # prewarm attempts before giving up (int)
+  breaker_interval: "60s"        # circuit breaker counter window
+  breaker_open: "30s"            # circuit breaker open duration
+  cf_api: "30s"                  # Cloudflare API HTTP client timeout
+  destroy_on_exit: "60s"         # cleanup deadline on --destroy-on-exit
+  admin_shutdown: "2s"           # admin HTTP graceful shutdown
+  admin_token_op: "120s"         # /tokens POST|DELETE runtime op deadline
+  drain_timeout: "30s"           # graceful drain: wait inflight=0 before deleting old worker
+  drain_poll: "100ms"            # drain polling interval
