@@ -1,0 +1,88 @@
+# FlareX config baked into the Docker image. Every sensitive value is
+# empty here and expected to be overridden via FLX_* env vars from the
+# compose file. This file has no template placeholders so the server's
+# pre-flight placeholder check passes; env overrides fill in the real
+# values at runtime (env > YAML > defaults).
+#
+# See docs/configuration.md for the full reference.
+
+log:
+  level: info
+  json: false
+
+listen:
+  socks5: "tcp://0.0.0.0:1080"
+  http: ""
+  auth_user: ""
+  auth_pass: ""
+  unix_perms: 0600
+
+# CF tokens supplied via FLX_TOKENS (comma-separated) from compose.
+tokens: []
+
+worker:
+  name_prefix: "flarex-"
+  count: 10
+  deploy_timeout: 30
+  deploy_backend: "workers_dev"
+  rotate_interval_sec: 600
+  rotate_max_age_sec: 3600
+  rotate_max_req: 2000
+
+filter:
+  allow_ports: [22, 80, 443, 3306, 5432, 6379, 8080, 8443]
+  deny_cidrs: []
+
+pool:
+  strategy: "round_robin"
+  max_retries: 3
+  backoff_ms: 50
+  hedge_after_ms: 150
+  proxy_mode: "hybrid"
+  disable_probe: false
+  tls_rewrap: false
+
+rate_limit:
+  per_host_qps: 0
+  per_host_burst: 10
+
+admin:
+  addr: "0.0.0.0:9090"
+  api_key: ""
+  token: ""
+  basic_user: ""
+  basic_pass: ""
+  enable_pprof: false
+  ui: true
+  totp_secret: ""
+
+state:
+  path: "/state/flarex.db"
+
+quota:
+  daily_limit: 100000
+  warn_percent: 80
+  seed_from_cloudflare: false
+
+alerts:
+  cooldown_sec: 900
+
+security:
+  # REQUIRED via env FLX_HMAC_SECRET (32+ random chars).
+  # Leaving it empty here means the server refuses to start unless the
+  # env var is supplied.
+  hmac_secret: ""
+
+timeouts:
+  dial: "15s"
+  probe: "800ms"
+  probe_fetch: "1500ms"
+  idle_conn: "120s"
+  health_check_interval: "30s"
+  dns_cache_ttl: "5m"
+  cf_blocked_cache_ttl: "10m"
+  breaker_interval: "60s"
+  breaker_open: "30s"
+  cf_api: "30s"
+  destroy_on_exit: "60s"
+  drain_timeout: "30s"

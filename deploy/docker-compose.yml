@@ -49,7 +49,10 @@ services:
       - "9090:9090"
 
     volumes:
-      - ./config.yaml:/etc/flarex/config.yaml:ro
+      # The image ships with a zero-placeholder config.yaml; env vars below
+      # override every sensitive field. To customise further, uncomment the
+      # line below after putting a config.yaml next to this compose file.
+      # - ./config.yaml:/etc/flarex/config.yaml:ro
       - flarex-state:/state
 
     healthcheck:

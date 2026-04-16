@@ -46,13 +46,20 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 FROM alpine:3 AS prod
 RUN apk add --no-cache ca-certificates && \
     adduser -D -u 65532 -H nonroot && \
-    mkdir -p /state && chown nonroot:nonroot /state
+    mkdir -p /state /etc/flarex && chown nonroot:nonroot /state /etc/flarex
 COPY --from=builder /out/flarex /flarex
+# Bake a zero-placeholder config so containers boot with env-only config
+# (FLX_HMAC_SECRET, FLX_TOKENS, etc). Overridable via bind mount.
+COPY deploy/config.docker.yaml /etc/flarex/config.yaml
 USER nonroot
 # SOCKS5 + admin HTTP
 EXPOSE 1080 9090
 ENTRYPOINT ["/flarex"]
-CMD ["-c", "/etc/flarex/config.yaml", "server"]
+# `--deploy` auto-provisions the worker pool on a fresh state volume so
+# a first `docker compose up` is self-contained (no need to `flarex
+# deploy` separately). Override in compose if you manage deploys
+# externally, e.g. `command: ["-c", "/etc/flarex/config.yaml", "server"]`.
+CMD ["-c", "/etc/flarex/config.yaml", "server", "--deploy"]
 
 # ============================================================================
 FROM gcr.io/distroless/static-debian12:nonroot AS mock
