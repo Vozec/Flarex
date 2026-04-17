@@ -33,7 +33,12 @@ func IsKnownUnreachable(host string, port int) bool {
 }
 
 func hostPortKey(host string, port int) string {
-	return host + ":" + itoa(port)
+	p := itoa(port)
+	buf := make([]byte, 0, len(host)+1+len(p))
+	buf = append(buf, host...)
+	buf = append(buf, ':')
+	buf = append(buf, p...)
+	return string(buf)
 }
 
 func itoa(n int) string {

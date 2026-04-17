@@ -38,10 +38,11 @@ func TestHandshakeNoAuth_DomainTarget(t *testing.T) {
 	}
 
 	dom := "example.com"
-	req := []byte{0x05, 0x01, 0x00, 0x03, byte(len(dom))}
-	req = append(req, []byte(dom)...)
 	var portBytes [2]byte
 	binary.BigEndian.PutUint16(portBytes[:], 443)
+	req := make([]byte, 0, 5+len(dom)+len(portBytes))
+	req = append(req, 0x05, 0x01, 0x00, 0x03, byte(len(dom)))
+	req = append(req, []byte(dom)...)
 	req = append(req, portBytes[:]...)
 	c2.Write(req)
 

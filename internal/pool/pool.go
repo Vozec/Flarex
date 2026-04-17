@@ -3,7 +3,6 @@ package pool
 import (
 	"context"
 	"fmt"
-	"hash/fnv"
 	"net"
 	"net/http"
 	"sync"
@@ -230,7 +229,7 @@ func (p *Pool) SetAccountPaused(accountID string, paused bool) int {
 
 func (p *Pool) ByAccount(accountID string) []*Worker {
 	cur := p.load()
-	var out []*Worker
+	out := make([]*Worker, 0, len(cur))
 	for _, w := range cur {
 		if w.AccountID == accountID {
 			out = append(out, w)
@@ -263,9 +262,12 @@ func (p *Pool) NextBySession(session string) (*Worker, error) {
 	if len(cur) == 0 {
 		return nil, fmt.Errorf("empty pool")
 	}
-	h := fnv.New64a()
-	h.Write([]byte(session))
-	start := h.Sum64()
+	// Inline FNV-1a to avoid allocating a hash.Hash64 per call.
+	start := uint64(14695981039346656037)
+	for i := 0; i < len(session); i++ {
+		start ^= uint64(session[i])
+		start *= 1099511628211
+	}
 	n := uint64(len(cur))
 	for i := uint64(0); i < n; i++ {
 		w := cur[int((start+i)%n)]
