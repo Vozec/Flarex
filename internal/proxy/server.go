@@ -204,7 +204,8 @@ func (s *Server) handle(ctx context.Context, conn net.Conn) {
 func peekAndClassify(conn net.Conn, timeout time.Duration, max int) ([]byte, bool, error) {
 	_ = conn.SetReadDeadline(time.Now().Add(timeout))
 	defer conn.SetReadDeadline(time.Time{})
-	buf := make([]byte, max)
+	var stackBuf [256]byte
+	buf := stackBuf[:max]
 	n, err := conn.Read(buf)
 	if n == 0 {
 		if err == nil {
@@ -233,6 +234,13 @@ func randID() string {
 //           Counted as "upstream" (client -> target).
 func relay(a, b net.Conn) {
 	var wg sync.WaitGroup
+	var once sync.Once
+	closeAll := func() {
+		once.Do(func() {
+			a.Close()
+			b.Close()
+		})
+	}
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
@@ -242,8 +250,7 @@ func relay(a, b net.Conn) {
 		if n > 0 {
 			metrics.BytesDownstream.Add(int(n))
 		}
-		a.Close()
-		b.Close()
+		closeAll()
 	}()
 	go func() {
 		defer wg.Done()
@@ -253,8 +260,7 @@ func relay(a, b net.Conn) {
 		if n > 0 {
 			metrics.BytesUpstream.Add(int(n))
 		}
-		a.Close()
-		b.Close()
+		closeAll()
 	}()
 	wg.Wait()
 }

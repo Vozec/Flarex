@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"sync"
 	"time"
 
@@ -68,13 +69,13 @@ func DialWorker(ctx context.Context, w *pool.Worker, hmacSecret, host string, po
 	}
 	q := u.Query()
 	q.Set("h", host)
-	q.Set("p", fmt.Sprintf("%d", port))
+	q.Set("p", strconv.Itoa(port))
 	if tlsUpstream {
 		q.Set("t", "1")
 	} else {
 		q.Set("t", "0")
 	}
-	q.Set("ts", fmt.Sprintf("%d", ts))
+	q.Set("ts", strconv.FormatInt(ts, 10))
 	q.Set("s", sig)
 	q.Set("m", mode)
 	u.RawQuery = q.Encode()
@@ -120,15 +121,14 @@ func DialWorker(ctx context.Context, w *pool.Worker, hmacSecret, host string, po
 }
 
 type wsConn struct {
-	ws     *websocket.Conn
-	ctx    context.Context
-	rr     io.Reader
-	closed bool
-	mu     sync.Mutex
+	ws        *websocket.Conn
+	ctx       context.Context
+	rr        io.Reader
+	closeOnce sync.Once
+	closeErr  error
 }
 
 func (w *wsConn) Read(b []byte) (int, error) {
-
 	if w.rr != nil {
 		n, err := w.rr.Read(b)
 		if err == io.EOF {
@@ -136,7 +136,6 @@ func (w *wsConn) Read(b []byte) (int, error) {
 			if n > 0 {
 				return n, nil
 			}
-
 		} else {
 			return n, err
 		}
@@ -146,7 +145,6 @@ func (w *wsConn) Read(b []byte) (int, error) {
 		return 0, err
 	}
 	if mt != websocket.MessageBinary && mt != websocket.MessageText {
-
 		return 0, io.EOF
 	}
 	w.rr = rr
@@ -154,7 +152,6 @@ func (w *wsConn) Read(b []byte) (int, error) {
 }
 
 func (w *wsConn) Write(b []byte) (int, error) {
-
 	if err := w.ws.Write(w.ctx, websocket.MessageBinary, b); err != nil {
 		return 0, err
 	}
@@ -162,13 +159,10 @@ func (w *wsConn) Write(b []byte) (int, error) {
 }
 
 func (w *wsConn) Close() error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.closed {
-		return nil
-	}
-	w.closed = true
-	return w.ws.Close(websocket.StatusNormalClosure, "")
+	w.closeOnce.Do(func() {
+		w.closeErr = w.ws.Close(websocket.StatusNormalClosure, "")
+	})
+	return w.closeErr
 }
 
 func (w *wsConn) LocalAddr() net.Addr               { return dummyAddr("ws-local") }

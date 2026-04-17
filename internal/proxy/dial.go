@@ -271,13 +271,11 @@ func dialBreak(ctx context.Context, w *pool.Worker, hmacSecret, host string, por
 }
 
 func drainResChan(ch <-chan dialRes) {
-
+	// Non-blocking drain of already-buffered results. In-flight
+	// goroutines clean up their own connections via <-dctx.Done().
 	for {
 		select {
-		case r, ok := <-ch:
-			if !ok {
-				return
-			}
+		case r := <-ch:
 			if r.conn != nil {
 				r.conn.Close()
 			}
