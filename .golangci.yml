@@ -32,13 +32,10 @@ linters:
       excludes:
         - G104  # hash.Write / errors we deliberately ignore (hash.Hash never errors)
         - G115  # int conversions (netip.Port, etc.)
-        - G117  # client config file stores API key intentionally (0600 perms)
-        - G118  # shutdown goroutine must outlive request context
         - G301  # state dir 0o755 is intentional for shared multi-user setups
         - G304  # config / template paths come from validated CLI flags
         - G402  # TLS skip-verify warns on conditional configs we own
         - G404  # math/rand for jitter / non-crypto IDs
-        - G704  # bootstrap URL is operator-controlled (CLI flag or env)
     revive:
       rules:
         - name: exported
