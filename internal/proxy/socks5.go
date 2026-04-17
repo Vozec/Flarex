@@ -53,8 +53,8 @@ type Request struct {
 func Handshake(conn net.Conn, auth *Auth, filt *filter.IPFilter) (*Request, error) {
 	br := bufReader(conn)
 
-	header := make([]byte, 2)
-	if _, err := io.ReadFull(br, header); err != nil {
+	var header [2]byte
+	if _, err := io.ReadFull(br, header[:]); err != nil {
 		return nil, fmt.Errorf("greeting: %w", err)
 	}
 	if header[0] != socksVer5 {
@@ -94,8 +94,8 @@ func Handshake(conn net.Conn, auth *Auth, filt *filter.IPFilter) (*Request, erro
 		session = extractSession(u, auth.User)
 	}
 
-	reqHead := make([]byte, 4)
-	if _, err := io.ReadFull(br, reqHead); err != nil {
+	var reqHead [4]byte
+	if _, err := io.ReadFull(br, reqHead[:]); err != nil {
 		return nil, err
 	}
 	if reqHead[0] != socksVer5 {
@@ -109,22 +109,22 @@ func Handshake(conn net.Conn, auth *Auth, filt *filter.IPFilter) (*Request, erro
 	var host string
 	switch reqHead[3] {
 	case atypIPv4:
-		buf := make([]byte, 4)
-		if _, err := io.ReadFull(br, buf); err != nil {
+		var buf [4]byte
+		if _, err := io.ReadFull(br, buf[:]); err != nil {
 			return nil, err
 		}
-		a, _ := netip.AddrFromSlice(buf)
+		a, _ := netip.AddrFromSlice(buf[:])
 		host = a.String()
 	case atypIPv6:
-		buf := make([]byte, 16)
-		if _, err := io.ReadFull(br, buf); err != nil {
+		var buf [16]byte
+		if _, err := io.ReadFull(br, buf[:]); err != nil {
 			return nil, err
 		}
-		a, _ := netip.AddrFromSlice(buf)
+		a, _ := netip.AddrFromSlice(buf[:])
 		host = a.String()
 	case atypDomain:
-		lb := make([]byte, 1)
-		if _, err := io.ReadFull(br, lb); err != nil {
+		var lb [1]byte
+		if _, err := io.ReadFull(br, lb[:]); err != nil {
 			return nil, err
 		}
 		dom := make([]byte, int(lb[0]))
@@ -137,11 +137,11 @@ func Handshake(conn net.Conn, auth *Auth, filt *filter.IPFilter) (*Request, erro
 		return nil, fmt.Errorf("unsupported atyp %d", reqHead[3])
 	}
 
-	portBuf := make([]byte, 2)
-	if _, err := io.ReadFull(br, portBuf); err != nil {
+	var portBuf [2]byte
+	if _, err := io.ReadFull(br, portBuf[:]); err != nil {
 		return nil, err
 	}
-	port := int(binary.BigEndian.Uint16(portBuf))
+	port := int(binary.BigEndian.Uint16(portBuf[:]))
 
 	if err := filt.AllowHost(host, port); err != nil {
 		reply(conn, repNotAllowed)

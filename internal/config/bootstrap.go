@@ -38,11 +38,11 @@ func Bootstrap(ctx context.Context, path, url string) (bool, error) {
 
 	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(cctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(cctx, http.MethodGet, url, nil) //nolint:gosec // G704: URL is operator-controlled (CLI flag or env), not user input
 	if err != nil {
 		return false, err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // G704: see above
 	if err != nil {
 		return false, fmt.Errorf("fetch %s: %w", url, err)
 	}

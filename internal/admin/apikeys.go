@@ -35,7 +35,7 @@ func (s *Server) handleAPIKeys(w http.ResponseWriter, r *http.Request) {
 			s.apiKeysList(w, r)
 		case http.MethodPost:
 			if !s.allowAPIKeyMutation(r) {
-				http.Error(w, `{"error":"rate limit exceeded — slow down API key mutations"}`, http.StatusTooManyRequests)
+				http.Error(w, rateLimitMsg, http.StatusTooManyRequests)
 				return
 			}
 			s.apiKeysCreate(w, r)
@@ -49,13 +49,13 @@ func (s *Server) handleAPIKeys(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodDelete:
 		if !s.allowAPIKeyMutation(r) {
-			http.Error(w, `{"error":"rate limit exceeded — slow down API key mutations"}`, http.StatusTooManyRequests)
+			http.Error(w, rateLimitMsg, http.StatusTooManyRequests)
 			return
 		}
 		s.apiKeysDelete(w, r, id)
 	case http.MethodPatch:
 		if !s.allowAPIKeyMutation(r) {
-			http.Error(w, `{"error":"rate limit exceeded — slow down API key mutations"}`, http.StatusTooManyRequests)
+			http.Error(w, rateLimitMsg, http.StatusTooManyRequests)
 			return
 		}
 		s.apiKeysPatch(w, r, id)
@@ -148,6 +148,7 @@ func (s *Server) apiKeysCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
 		return
 	}
+	s.InvalidateAPIKeyCache()
 	logger.L.Info().Str("id", rec.ID).Str("name", rec.Name).Strs("scopes", rec.Scopes).Msg("admin: API key created")
 	s.audit(r, "apikey.create", rec.ID, rec.Name)
 	_ = json.NewEncoder(w).Encode(map[string]any{
@@ -197,6 +198,7 @@ func (s *Server) apiKeysPatch(w http.ResponseWriter, r *http.Request, id string)
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadGateway)
 		return
 	}
+	s.InvalidateAPIKeyCache()
 	logger.L.Info().Str("id", id).Bool("disabled", *req.Disabled).Msg("admin: API key patched")
 	action := "apikey.enable"
 	if *req.Disabled {
@@ -211,6 +213,7 @@ func (s *Server) apiKeysDelete(w http.ResponseWriter, r *http.Request, id string
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadGateway)
 		return
 	}
+	s.InvalidateAPIKeyCache()
 	logger.L.Info().Str("id", id).Msg("admin: API key revoked")
 	s.audit(r, "apikey.revoke", id, "")
 	_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "deleted": true})

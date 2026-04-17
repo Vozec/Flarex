@@ -11,6 +11,7 @@ import (
 	"net/http/pprof"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	vm "github.com/VictoriaMetrics/metrics"
@@ -37,6 +38,11 @@ type Server struct {
 
 	// TOTPSecret (base32) enables 2FA on POST /session. Empty = disabled.
 	TOTPSecret string
+
+	// apiKeyCache is a hash→record index rebuilt on demand to avoid
+	// O(n) scans of the bbolt store on every authenticated request.
+	apiKeyCache   map[string]APIKeyRecord
+	apiKeyCacheMu sync.RWMutex
 
 	AddTokenFunc func(ctx context.Context, token string, count int) ([]string, error)
 
@@ -253,7 +259,7 @@ func (s *Server) Serve(ctx context.Context) error {
 
 	go func() {
 		<-ctx.Done()
-		shutCtx, cancel := context.WithTimeout(context.Background(), ShutdownTimeoutD)
+		shutCtx, cancel := context.WithTimeout(context.Background(), ShutdownTimeoutD) //nolint:gosec // G118: shutdown must outlive request context
 		defer cancel()
 		_ = srv.Shutdown(shutCtx)
 	}()
@@ -484,7 +490,8 @@ func (s *Server) resolveScopes(r *http.Request) ([]Scope, string, bool) {
 		}
 	}
 	// Dynamic registry lookup: client may send raw key via X-API-Key or
-	// Authorization: Bearer <raw>. Hash it, look up, check disabled/expired.
+	// Authorization: Bearer <raw>. Hash it, look up via in-memory cache
+	// (O(1) instead of scanning all keys from bbolt on every request).
 	if s.APIKeys != nil {
 		raw := apiKeyHdr
 		if raw == "" && strings.HasPrefix(authHdr, "Bearer ") {
@@ -492,29 +499,67 @@ func (s *Server) resolveScopes(r *http.Request) ([]Scope, string, bool) {
 		}
 		if raw != "" {
 			h := hashAPIKey(raw)
-			keys, err := s.APIKeys.ListAPIKeys()
-			if err == nil {
-				for _, k := range keys {
-					if k.Hash != h {
-						continue
-					}
-					if k.Disabled {
-						return nil, "", false
-					}
-					if k.ExpiresAt != nil && time.Now().After(*k.ExpiresAt) {
-						return nil, "", false
-					}
-					go s.APIKeys.MarkAPIKeyUsed(h)
-					scopes := make([]Scope, 0, len(k.Scopes))
-					for _, ss := range k.Scopes {
-						scopes = append(scopes, Scope(ss))
-					}
-					return scopes, "apikey:" + k.Name, true
+			if k, ok := s.lookupAPIKeyByHash(h); ok {
+				if k.Disabled {
+					return nil, "", false
 				}
+				if k.ExpiresAt != nil && time.Now().After(*k.ExpiresAt) {
+					return nil, "", false
+				}
+				go s.APIKeys.MarkAPIKeyUsed(h)
+				scopes := make([]Scope, 0, len(k.Scopes))
+				for _, ss := range k.Scopes {
+					scopes = append(scopes, Scope(ss))
+				}
+				return scopes, "apikey:" + k.Name, true
 			}
 		}
 	}
 	return nil, "", false
+}
+
+// lookupAPIKeyByHash returns a cached API key record by its hash.
+// The cache is lazily built from the store and invalidated by
+// InvalidateAPIKeyCache (called from mutation handlers).
+func (s *Server) lookupAPIKeyByHash(hash string) (APIKeyRecord, bool) {
+	s.apiKeyCacheMu.RLock()
+	if s.apiKeyCache != nil {
+		k, ok := s.apiKeyCache[hash]
+		s.apiKeyCacheMu.RUnlock()
+		return k, ok
+	}
+	s.apiKeyCacheMu.RUnlock()
+
+	// Cache miss: rebuild from store.
+	s.apiKeyCacheMu.Lock()
+	defer s.apiKeyCacheMu.Unlock()
+	// Double-check after acquiring write lock.
+	if s.apiKeyCache != nil {
+		k, ok := s.apiKeyCache[hash]
+		return k, ok
+	}
+	s.rebuildAPIKeyCacheLocked()
+	k, ok := s.apiKeyCache[hash]
+	return k, ok
+}
+
+// InvalidateAPIKeyCache clears the in-memory hash index so it is
+// rebuilt on the next lookup. Call after any API key mutation.
+func (s *Server) InvalidateAPIKeyCache() {
+	s.apiKeyCacheMu.Lock()
+	s.apiKeyCache = nil
+	s.apiKeyCacheMu.Unlock()
+}
+
+func (s *Server) rebuildAPIKeyCacheLocked() {
+	s.apiKeyCache = make(map[string]APIKeyRecord)
+	keys, err := s.APIKeys.ListAPIKeys()
+	if err != nil {
+		return
+	}
+	for _, k := range keys {
+		s.apiKeyCache[k.Hash] = k
+	}
 }
 
 // resolveSessionCookie validates the HMAC-signed flarex_session cookie set

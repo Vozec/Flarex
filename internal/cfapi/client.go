@@ -22,6 +22,10 @@ type Client struct {
 	http      *http.Client
 }
 
+func newBare(token string) *Client {
+	return &Client{token: token, http: &http.Client{Timeout: APITimeout}}
+}
+
 func New(accountID, token string) *Client {
 	return &Client{
 		accountID: accountID,
@@ -218,7 +222,7 @@ type SubdomainInfo struct {
 }
 
 func ListAccounts(ctx context.Context, token string) ([]AccountInfo, error) {
-	bare := &Client{token: token, http: &http.Client{Timeout: APITimeout}}
+	bare := newBare(token)
 	return bare.listAccounts(ctx)
 }
 
@@ -260,7 +264,7 @@ type Zone struct {
 }
 
 func ListZones(ctx context.Context, token string) ([]Zone, error) {
-	bare := &Client{token: token, http: &http.Client{Timeout: APITimeout}}
+	bare := newBare(token)
 	raw, err := bare.do(ctx, http.MethodGet, "/zones?per_page=50", nil, "")
 	if err != nil {
 		return nil, err
@@ -280,7 +284,7 @@ type DNSRecord struct {
 }
 
 func ListDNSRecords(ctx context.Context, token, zoneID, namePrefix string) ([]DNSRecord, error) {
-	bare := &Client{token: token, http: &http.Client{Timeout: APITimeout}}
+	bare := newBare(token)
 	path := fmt.Sprintf("/zones/%s/dns_records?per_page=200", zoneID)
 	raw, err := bare.do(ctx, http.MethodGet, path, nil, "")
 	if err != nil {
@@ -303,7 +307,7 @@ func ListDNSRecords(ctx context.Context, token, zoneID, namePrefix string) ([]DN
 }
 
 func DeleteDNSRecord(ctx context.Context, token, zoneID, recordID string) error {
-	bare := &Client{token: token, http: &http.Client{Timeout: APITimeout}}
+	bare := newBare(token)
 	path := fmt.Sprintf("/zones/%s/dns_records/%s", zoneID, recordID)
 	_, err := bare.do(ctx, http.MethodDelete, path, nil, "")
 	return err

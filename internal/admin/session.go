@@ -206,6 +206,14 @@ func (s *Server) allowAPIKeyMutation(r *http.Request) bool {
 	now := time.Now()
 	apikeyMut.mu.Lock()
 	defer apikeyMut.mu.Unlock()
+
+	// Evict expired entries to prevent unbounded growth.
+	for k, st := range apikeyMut.hits {
+		if now.Sub(st.windowStart) > apikeyMutWindow*2 {
+			delete(apikeyMut.hits, k)
+		}
+	}
+
 	st, ok := apikeyMut.hits[who]
 	if !ok || now.Sub(st.windowStart) > apikeyMutWindow {
 		apikeyMut.hits[who] = &apikeyMutState{count: 1, windowStart: now}
