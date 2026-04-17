@@ -19,7 +19,7 @@ import (
 
 type ConfigFile struct {
 	URL      string `yaml:"url"`
-	APIKey   string `yaml:"api_key,omitempty"`
+	APIKey   string `yaml:"api_key,omitempty"` //nolint:gosec // G117: intentionally stored in local config file with 0600 perms
 	Bearer   string `yaml:"bearer,omitempty"`
 	BasicU   string `yaml:"basic_user,omitempty"`
 	BasicP   string `yaml:"basic_pass,omitempty"`
