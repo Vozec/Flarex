@@ -26,9 +26,7 @@ type alertmanagerAlert struct {
 // — the forwarder only reads-then-writes-to-sinks, no mutation of pool
 // state.
 func (s *Server) handleAlertsWebhook(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !methodPOST(w, r) {
 		return
 	}
 	if s.AlertHook == nil {

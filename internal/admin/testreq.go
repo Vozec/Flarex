@@ -13,9 +13,7 @@ import (
 // pool and returns a structured report (worker, colo, egress IP, latency,
 // status, truncated body). POST body: {"url":"https://example.com"}.
 func (s *Server) handleTestRequest(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !methodPOST(w, r) {
 		return
 	}
 	if s.TestRequestFunc == nil {
@@ -85,9 +83,7 @@ func (s *Server) handleTestHistory(w http.ResponseWriter, r *http.Request) {
 // handleProxyMode swaps pool.proxy_mode at runtime. POST body:
 // {"mode":"socket|fetch|hybrid"}.
 func (s *Server) handleProxyMode(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !methodPOST(w, r) {
 		return
 	}
 	if s.SetProxyModeFunc == nil {
@@ -116,8 +112,3 @@ func (s *Server) handleProxyMode(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"mode": body.Mode})
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
