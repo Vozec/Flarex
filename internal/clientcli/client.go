@@ -79,8 +79,16 @@ type Client struct {
 	http *http.Client
 }
 
+// Default HTTP client timeout. Admin mutations (destroy, clean, deploy,
+// add-token) fan out across multiple CF API calls per account and can
+// easily exceed 30 s on a fleet of a few dozen workers. Server-side
+// TokenOpTimeoutD is 120 s; give the client a ~40 s headroom so the
+// server's own error response is what the user sees, not a client
+// timeout.
+const defaultTimeout = 180 * time.Second
+
 func New(cfg *ConfigFile) *Client {
-	return &Client{cfg: cfg, http: &http.Client{Timeout: 30 * time.Second}}
+	return &Client{cfg: cfg, http: &http.Client{Timeout: defaultTimeout}}
 }
 
 func (c *Client) Do(ctx context.Context, method, path string, body any) (*http.Response, error) {
