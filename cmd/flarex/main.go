@@ -17,6 +17,7 @@ import (
 	"github.com/Vozec/flarex/internal/admin"
 	"github.com/Vozec/flarex/internal/alerts"
 	"github.com/Vozec/flarex/internal/cfapi"
+	"github.com/Vozec/flarex/internal/clientcli"
 	"github.com/Vozec/flarex/internal/config"
 	"github.com/Vozec/flarex/internal/discovery"
 	"github.com/Vozec/flarex/internal/dnscache"
@@ -69,28 +70,37 @@ func main() {
 		Commands: []*cli.Command{
 			{
 				Name:  "deploy",
-				Usage: "deploy Workers to Cloudflare",
+				Usage: "deploy Workers (remote if `flarex client login` has been run, else local)",
 				Flags: []cli.Flag{
 					&cli.IntFlag{Name: "count", Aliases: []string{"n"}, Usage: "override worker.count from config"},
+					&cli.StringFlag{Name: "account", Usage: "remote-only: target account ID (required)"},
 				},
-				Action: runDeploy,
+				Action: dispatch(runDeploy, runClientDeploy),
 			},
-			{Name: "destroy", Usage: "delete all Workers (matching config prefix)", Action: runDestroy},
+			{
+				Name:  "destroy",
+				Usage: "delete all Workers (remote if logged in, else local; matches config prefix)",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{Name: "yes", Usage: "remote-only: skip the interactive confirmation"},
+				},
+				Action: dispatch(runDestroy, runClientDestroy),
+			},
 			{
 				Name:  "clean",
-				Usage: "delete Workers + DNS records matching prefix (safe, prefix-scoped)",
+				Usage: "delete Workers + DNS records matching prefix (remote if logged in, else local)",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{Name: "dry-run", Usage: "print what would be deleted without deleting"},
+					&cli.BoolFlag{Name: "yes", Usage: "remote-only: skip the interactive confirmation"},
 				},
-				Action: runClean,
+				Action: dispatch(runClean, runClientClean),
 			},
 			{
 				Name:  "list",
-				Usage: "list deployed Workers",
+				Usage: "list deployed Workers (remote if logged in, else local)",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{Name: "json", Usage: "emit JSON instead of a table"},
 				},
-				Action: runList,
+				Action: dispatch(runList, runClientList),
 			},
 			{
 				Name:   "version",
@@ -169,6 +179,36 @@ func main() {
 	}
 	if err := app.Run(context.Background(), os.Args); err != nil {
 		logger.L.Fatal().Err(err).Msg("fatal")
+	}
+}
+
+// preferRemote reports whether a top-level command that has both a local
+// and a remote implementation should route to the remote (admin API) one.
+//
+// Rule: remote wins when the user has NOT explicitly passed `-c/--config`
+// AND `flarex client login` has been run (i.e. the client config file at
+// ~/.config/flarex/client.yaml — or $FLX_CLIENT_CONFIG — loads cleanly).
+// Explicit `-c cfg.yaml` is the escape hatch back to local.
+func preferRemote(c *cli.Command) bool {
+	if c.IsSet("config") {
+		return false
+	}
+	if _, err := clientcli.Load(); err != nil {
+		return false
+	}
+	return true
+}
+
+// dispatch wraps a pair of (local, remote) actions and picks one at call
+// time via preferRemote. Lets top-level commands (deploy/destroy/clean/list)
+// transparently act on the remote admin server when the user has logged in
+// with `flarex client login`, or stay local otherwise.
+func dispatch(local, remote cli.ActionFunc) cli.ActionFunc {
+	return func(ctx context.Context, c *cli.Command) error {
+		if preferRemote(c) {
+			return remote(ctx, c)
+		}
+		return local(ctx, c)
 	}
 }
 
