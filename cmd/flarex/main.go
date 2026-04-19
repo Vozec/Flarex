@@ -747,43 +747,70 @@ func runClean(ctx context.Context, c *cli.Command) error {
 	defer st.Close()
 
 	dryRun := c.Bool("dry-run")
-	prefix := cfg.Worker.NamePrefix
-	if prefix == "" {
-		return fmt.Errorf("worker.name_prefix empty — refusing to clean (would match everything)")
-	}
-	if cfg.Worker.NamePrefixDefaulted {
-		return fmt.Errorf("worker.name_prefix was not set in config (silently defaulted to %q) — refusing to clean; explicitly set worker.name_prefix in config.yaml to acknowledge the scope", prefix)
-	}
-	if len(prefix) < 3 {
-		return fmt.Errorf("worker.name_prefix=%q is too short (< 3 chars) — refusing to clean; use a more specific prefix", prefix)
+	workers, dnsRows, err := runCleanCore(ctx, cfg, st, dryRun)
+	if err != nil {
+		return err
 	}
 
-	if !dryRun {
-		if err := worker.DestroyAll(ctx, cfg, st); err != nil {
-			logger.L.Warn().Err(err).Msg("some workers failed to delete")
-		}
-	} else {
-		ws, _ := worker.ListAll(ctx, cfg)
-		if len(ws) == 0 {
+	if dryRun {
+		if len(workers) == 0 {
 			fmt.Println("no workers to delete")
 		} else {
 			tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 			fmt.Fprintln(tw, "\n[DRY-RUN] WORKERS TO DELETE")
-			fmt.Fprintln(tw, "NAME\tACCOUNT")
-			fmt.Fprintln(tw, "----\t-------")
-			for _, w := range ws {
-				acc := w.AccountID
-				if len(acc) > 12 {
-					acc = acc[:8] + "…"
-				}
-				fmt.Fprintf(tw, "%s\t%s\n", w.Name, acc)
+			fmt.Fprintln(tw, "NAME")
+			fmt.Fprintln(tw, "----")
+			for _, n := range workers {
+				fmt.Fprintf(tw, "%s\n", n)
 			}
 			_ = tw.Flush()
-			fmt.Printf("-- %d worker(s)\n", len(ws))
+			fmt.Printf("-- %d worker(s)\n", len(workers))
+		}
+		if len(dnsRows) == 0 {
+			fmt.Println("\nno DNS records to delete")
+		} else {
+			tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			fmt.Fprintln(tw, "\n[DRY-RUN] DNS RECORDS TO DELETE")
+			fmt.Fprintln(tw, "ZONE\tTYPE\tNAME")
+			fmt.Fprintln(tw, "----\t----\t----")
+			for _, r := range dnsRows {
+				fmt.Fprintf(tw, "%s\t%s\t%s\n", r.Zone, r.Type, r.Name)
+			}
+			_ = tw.Flush()
+			fmt.Printf("-- %d record(s)\n", len(dnsRows))
+		}
+	}
+	return nil
+}
+
+// runCleanCore is the shared prefix-scoped purge used by both the local
+// `flarex clean` CLI command and the remote POST /workers/clean admin
+// endpoint. Returns the list of worker names and DNS records that were
+// (or, in dry-run mode, would be) deleted.
+func runCleanCore(ctx context.Context, cfg *config.Config, st *state.Store, dryRun bool) ([]string, []admin.CleanDNSRecord, error) {
+	prefix := cfg.Worker.NamePrefix
+	if prefix == "" {
+		return nil, nil, fmt.Errorf("worker.name_prefix empty — refusing to clean (would match everything)")
+	}
+	if cfg.Worker.NamePrefixDefaulted {
+		return nil, nil, fmt.Errorf("worker.name_prefix was not set in config (silently defaulted to %q) — refusing to clean; explicitly set worker.name_prefix in config.yaml to acknowledge the scope", prefix)
+	}
+	if len(prefix) < 3 {
+		return nil, nil, fmt.Errorf("worker.name_prefix=%q is too short (< 3 chars) — refusing to clean; use a more specific prefix", prefix)
+	}
+
+	ws, _ := worker.ListAll(ctx, cfg)
+	workerNames := make([]string, 0, len(ws))
+	for _, w := range ws {
+		workerNames = append(workerNames, w.Name)
+	}
+	if !dryRun {
+		if err := worker.DestroyAll(ctx, cfg, st); err != nil {
+			logger.L.Warn().Err(err).Msg("some workers failed to delete")
 		}
 	}
 
-	var dnsRows [][4]string // zone, type, name, id
+	var dnsRows []admin.CleanDNSRecord
 	seen := make(map[string]bool)
 	for _, a := range cfg.Accounts {
 		if seen[a.Token] {
@@ -805,34 +832,21 @@ func runClean(ctx context.Context, c *cli.Command) error {
 				if !strings.HasPrefix(r.Name, prefix) {
 					continue
 				}
+				row := admin.CleanDNSRecord{Zone: z.Name, Type: r.Type, Name: r.Name, ID: r.ID}
 				if dryRun {
-					dnsRows = append(dnsRows, [4]string{z.Name, r.Type, r.Name, r.ID})
+					dnsRows = append(dnsRows, row)
 					continue
 				}
 				if err := cfapi.DeleteDNSRecord(ctx, a.Token, z.ID, r.ID); err != nil {
 					logger.L.Warn().Str("name", r.Name).Err(err).Msg("delete dns")
 					continue
 				}
+				dnsRows = append(dnsRows, row)
 				logger.L.Info().Str("zone", z.Name).Str("name", r.Name).Str("type", r.Type).Msg("DNS record deleted (prefix match)")
 			}
 		}
 	}
-	if dryRun {
-		if len(dnsRows) == 0 {
-			fmt.Println("\nno DNS records to delete")
-		} else {
-			tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(tw, "\n[DRY-RUN] DNS RECORDS TO DELETE")
-			fmt.Fprintln(tw, "ZONE\tTYPE\tNAME")
-			fmt.Fprintln(tw, "----\t----\t----")
-			for _, r := range dnsRows {
-				fmt.Fprintf(tw, "%s\t%s\t%s\n", r[0], r[1], r[2])
-			}
-			_ = tw.Flush()
-			fmt.Printf("-- %d record(s)\n", len(dnsRows))
-		}
-	}
-	return nil
+	return workerNames, dnsRows, nil
 }
 
 func runBackup(_ context.Context, c *cli.Command) error {
@@ -1449,6 +1463,49 @@ func runServe(ctx context.Context, c *cli.Command) error {
 			},
 			LogTailFunc: func(aCtx context.Context, workerName string) (<-chan []byte, func(), error) {
 				return tailWorkerLogs(aCtx, cfg, p, workerName)
+			},
+			DestroyAllFunc: func(aCtx context.Context) ([]string, error) {
+				ws, _ := worker.ListAll(aCtx, cfg)
+				names := make([]string, 0, len(ws))
+				for _, w := range ws {
+					names = append(names, w.Name)
+				}
+				if err := worker.DestroyAll(aCtx, cfg, st); err != nil {
+					return names, err
+				}
+				// Drain the in-memory pool so the CLI sees an empty /status
+				// right after a successful destroy.
+				for _, w := range p.All() {
+					p.Remove(w)
+				}
+				return names, nil
+			},
+			CleanFunc: func(aCtx context.Context, dryRun bool) ([]string, []admin.CleanDNSRecord, error) {
+				workers, dns, err := runCleanCore(aCtx, cfg, st, dryRun)
+				if err != nil {
+					return nil, nil, err
+				}
+				if !dryRun {
+					for _, w := range p.All() {
+						p.Remove(w)
+					}
+				}
+				return workers, dns, nil
+			},
+			ListWorkersFunc: func(aCtx context.Context) ([]admin.ListedWorker, error) {
+				ws, err := worker.ListAll(aCtx, cfg)
+				if err != nil {
+					return nil, err
+				}
+				out := make([]admin.ListedWorker, 0, len(ws))
+				for _, w := range ws {
+					out = append(out, admin.ListedWorker{
+						Name: w.Name, URL: w.URL, Account: w.AccountID,
+						Backend: w.Backend, Hostname: w.Hostname,
+						CreatedAt: w.CreatedAt.UTC().Format(time.RFC3339),
+					})
+				}
+				return out, nil
 			},
 			ConfigDumpFunc: func() map[string]any {
 				return sanitizedConfig(cfg)

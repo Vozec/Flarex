@@ -110,6 +110,19 @@ type Server struct {
 	// scale a pool without re-asking for the token on every request.
 	DeployMoreFunc func(ctx context.Context, accountID string, count int) ([]string, error)
 
+	// DestroyAllFunc wipes every worker across all configured accounts —
+	// remote equivalent of `flarex destroy`. nil = endpoint returns 503.
+	DestroyAllFunc func(ctx context.Context) ([]string, error)
+
+	// CleanFunc runs the prefix-scoped worker + DNS purge. dryRun=true lists
+	// targets without deleting. Remote equivalent of `flarex clean`.
+	CleanFunc func(ctx context.Context, dryRun bool) (workers []string, dnsRecords []CleanDNSRecord, err error)
+
+	// ListWorkersFunc returns the raw worker inventory from the backends
+	// (backend + hostname + url) — richer than /status which only exposes
+	// the in-memory pool. Remote equivalent of `flarex list`.
+	ListWorkersFunc func(ctx context.Context) ([]ListedWorker, error)
+
 	// UpdateConfigFunc applies a runtime config change. path uses dot
 	// notation ("pool.proxy_mode", "filter.allow_ports"). Returns whether
 	// the change was applied live vs. will require restart. Errors include
@@ -218,6 +231,7 @@ func (s *Server) Serve(ctx context.Context) error {
 		w.Write([]byte("ok"))
 	})
 	mux.HandleFunc("/tokens", s.authed(s.handleTokens))
+	mux.HandleFunc("/workers", s.authed(s.handleWorkersRoot))
 	mux.HandleFunc("/workers/", s.authed(s.handleWorkerSub))
 	mux.HandleFunc("/metrics/history", s.authed(s.handleQuotaHistory))
 	mux.HandleFunc("/metrics/series", s.authed(s.handleMetricsSeries))
@@ -843,8 +857,21 @@ func (s *Server) handleQuotaHistory(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleWorkerSub dispatches /workers/{name}/logs → SSE log stream.
+// Reserved top-level paths `/workers/deploy` and `/workers/clean` short-
+// circuit to their dedicated handlers (these names can never be real
+// worker names thanks to CF's naming rules, but even if they were, the
+// request shape — POST with body — wouldn't collide with the per-worker
+// subpaths below).
 func (s *Server) handleWorkerSub(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/workers/")
+	if path == "deploy" {
+		s.handleWorkersDeploy(w, r)
+		return
+	}
+	if path == "clean" {
+		s.handleWorkersClean(w, r)
+		return
+	}
 	parts := strings.SplitN(path, "/", 2)
 	if len(parts) != 2 {
 		http.Error(w, "use /workers/{name}/logs", http.StatusBadRequest)

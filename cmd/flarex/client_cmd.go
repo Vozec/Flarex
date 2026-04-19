@@ -100,6 +100,48 @@ func clientCmd() *cli.Command {
 				},
 				Action: runClientRemoveToken,
 			},
+			{
+				Name:  "list",
+				Usage: "GET /workers — full worker inventory (backend + hostname + url)",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{Name: "json", Usage: "emit raw JSON instead of a table"},
+				},
+				Action: runClientList,
+			},
+			{
+				Name:  "deploy",
+				Usage: "POST /workers/deploy — deploy N more workers on an existing account",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "account", Required: true, Usage: "account ID (see `client status`)"},
+					&cli.IntFlag{Name: "count", Usage: "override server's worker.count"},
+				},
+				Action: runClientDeploy,
+			},
+			{
+				Name:  "destroy",
+				Usage: "DELETE /workers?confirm=true — destroy every worker across all accounts",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{Name: "yes", Usage: "skip the interactive confirmation prompt"},
+				},
+				Action: runClientDestroy,
+			},
+			{
+				Name:  "clean",
+				Usage: "POST /workers/clean — prefix-scoped destroy (workers + DNS records)",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{Name: "dry-run", Usage: "list targets without deleting"},
+					&cli.BoolFlag{Name: "yes", Usage: "skip the interactive confirmation prompt"},
+				},
+				Action: runClientClean,
+			},
+			{
+				Name:  "recycle",
+				Usage: "POST /workers/{name}/recycle — graceful drain + redeploy",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "name", Required: true, Usage: "worker name to recycle"},
+				},
+				Action: runClientRecycle,
+			},
 		},
 	}
 }
@@ -447,6 +489,181 @@ func runClientAddToken(ctx context.Context, c *cli.Command) error {
 		return fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 	return enc.Encode(out)
+}
+
+type listedWorker struct {
+	Name      string `json:"name"`
+	URL       string `json:"url"`
+	Account   string `json:"account"`
+	Backend   string `json:"backend,omitempty"`
+	Hostname  string `json:"hostname,omitempty"`
+	CreatedAt string `json:"created_at,omitempty"`
+}
+
+type listResp struct {
+	Workers []listedWorker `json:"workers"`
+}
+
+func runClientList(ctx context.Context, c *cli.Command) error {
+	cli, err := loadClient()
+	if err != nil {
+		return err
+	}
+	if c.Bool("json") {
+		raw, err := cli.GetRaw(ctx, "/workers")
+		if err != nil {
+			return err
+		}
+		os.Stdout.Write(raw)
+		return nil
+	}
+	var resp listResp
+	if err := cli.GetJSON(ctx, "/workers", &resp); err != nil {
+		return err
+	}
+	if len(resp.Workers) == 0 {
+		fmt.Println("no workers deployed")
+		return nil
+	}
+	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "NAME\tBACKEND\tACCOUNT\tURL")
+	fmt.Fprintln(tw, "----\t-------\t-------\t---")
+	for _, w := range resp.Workers {
+		acc := w.Account
+		if len(acc) > 12 {
+			acc = acc[:8] + "…"
+		}
+		backend := w.Backend
+		if backend == "" {
+			backend = "-"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", w.Name, backend, acc, w.URL)
+	}
+	_ = tw.Flush()
+	fmt.Printf("\n-- %d worker(s)\n", len(resp.Workers))
+	return nil
+}
+
+func runClientDeploy(ctx context.Context, c *cli.Command) error {
+	cli, err := loadClient()
+	if err != nil {
+		return err
+	}
+	body := map[string]any{"account": c.String("account")}
+	if n := c.Int("count"); n > 0 {
+		body["count"] = n
+	}
+	return doJSONOp(ctx, cli, http.MethodPost, "/workers/deploy", body)
+}
+
+func runClientDestroy(ctx context.Context, c *cli.Command) error {
+	cli, err := loadClient()
+	if err != nil {
+		return err
+	}
+	if !c.Bool("yes") {
+		fmt.Fprint(os.Stderr, "This will destroy EVERY worker across EVERY account on the remote server.\nType 'yes' to continue: ")
+		var answer string
+		_, _ = fmt.Fscanln(os.Stdin, &answer)
+		if strings.TrimSpace(strings.ToLower(answer)) != "yes" {
+			return fmt.Errorf("aborted")
+		}
+	}
+	return doJSONOp(ctx, cli, http.MethodDelete, "/workers?confirm=true", nil)
+}
+
+func runClientClean(ctx context.Context, c *cli.Command) error {
+	cli, err := loadClient()
+	if err != nil {
+		return err
+	}
+	dryRun := c.Bool("dry-run")
+	if !dryRun && !c.Bool("yes") {
+		fmt.Fprint(os.Stderr, "This will DELETE every worker + matching DNS record for the configured prefix.\nType 'yes' to continue: ")
+		var answer string
+		_, _ = fmt.Fscanln(os.Stdin, &answer)
+		if strings.TrimSpace(strings.ToLower(answer)) != "yes" {
+			return fmt.Errorf("aborted")
+		}
+	}
+	body := map[string]any{"dry_run": dryRun}
+	resp, err := cli.Do(ctx, http.MethodPost, "/workers/clean", body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	var out struct {
+		DryRun  bool     `json:"dry_run"`
+		Workers []string `json:"workers"`
+		DNS     []struct {
+			Zone string `json:"zone"`
+			Type string `json:"type"`
+			Name string `json:"name"`
+		} `json:"dns_records"`
+		Error string `json:"error,omitempty"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return err
+	}
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, out.Error)
+	}
+	heading := "DELETED"
+	if out.DryRun {
+		heading = "[DRY-RUN] WOULD DELETE"
+	}
+	if len(out.Workers) == 0 {
+		fmt.Printf("\n%s workers: none\n", heading)
+	} else {
+		tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		fmt.Fprintf(tw, "\n%s WORKERS (%d)\nNAME\n----\n", heading, len(out.Workers))
+		for _, n := range out.Workers {
+			fmt.Fprintln(tw, n)
+		}
+		_ = tw.Flush()
+	}
+	if len(out.DNS) == 0 {
+		fmt.Printf("\n%s DNS records: none\n", heading)
+		return nil
+	}
+	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintf(tw, "\n%s DNS (%d)\nZONE\tTYPE\tNAME\n----\t----\t----\n", heading, len(out.DNS))
+	for _, r := range out.DNS {
+		fmt.Fprintf(tw, "%s\t%s\t%s\n", r.Zone, r.Type, r.Name)
+	}
+	_ = tw.Flush()
+	return nil
+}
+
+func runClientRecycle(ctx context.Context, c *cli.Command) error {
+	cli, err := loadClient()
+	if err != nil {
+		return err
+	}
+	name := c.String("name")
+	return doJSONOp(ctx, cli, http.MethodPost, "/workers/"+name+"/recycle", nil)
+}
+
+// doJSONOp issues a JSON request, pretty-prints the decoded body, and
+// returns a non-nil error on HTTP >= 300. Used for the simple
+// deploy/destroy/recycle commands that share the same response shape.
+func doJSONOp(ctx context.Context, cli *clientcli.Client, method, path string, body any) error {
+	resp, err := cli.Do(ctx, method, path, body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	var out any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return err
+	}
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(out)
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return nil
 }
 
 func runClientRemoveToken(ctx context.Context, c *cli.Command) error {
